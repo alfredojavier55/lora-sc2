@@ -1,0 +1,156 @@
+---
+title: "LiRA - WG1 SC2 new diseases"
+author: "Alfredo Acosta SVA"
+date: "`r Sys.Date()`"
+output:
+  html_document: 
+    toc: yes
+    toc_float: true
+    theme: cosmo
+    fig_caption: yes
+    number_sections: yes
+    code_folding: hide
+  word_document: default
+  html_notebook: 
+    toc: yes
+---
+# Working examples of disease occurrence
+## Loading libraries 
+
+```{r }
+# Library ----
+library(readxl)
+library(dplyr)
+library(lubridate)
+library(leaflet)
+library(sf)
+library(DT)
+```
+
+# DB WAHIS-INFUR & FAOSTAT 
+## Number of Outbreaks
+```{r warning=FALSE}
+setwd("C:/Users/alfredo.acosta/OneDrive - SVA/LORA/Working example/ocurrence_of_disease/")
+w <- read_xlsx("infur_20230407.xlsx")
+```
+
+## Modification in species category wahis (w) to match population  FAOSTAT (p)
+## New variable species of functional groups
+```{r include=FALSE}
+table(w$Species[w$is_wild == FALSE]) #domestic species TO MATCH
+
+table(w$Species[w$is_wild == FALSE]) %>% 
+  as.data.frame() %>% 
+  arrange(desc(Freq))
+
+w$Species_fg <- w$Species
+w$Species_fg <- gsub("[[:space:]]", "_", w$Species_fg) #Horses
+w$Species_fg <- gsub("Birds", "Chickens", w$Species_fg) #Birds
+w$Species_fg <- gsub("^Equidae", "Horses", w$Species_fg) #Horses
+
+head(table(w$Species_fg[w$is_wild == FALSE]) %>% 
+  as.data.frame() %>% 
+  arrange(desc(Freq)), 15)
+
+```
+
+# World map
+```{r}
+setwd("C:/Users/alfredo.acosta/OneDrive - SVA/LORA/Working example/ocurrence_of_disease/")
+wm <- st_read("TM_WORLD_BORDERS_SIMPL-0.3.shp")
+
+```
+New dseases Contract 2
+```{r}
+# table(w$disease_eng)
+```
+
+#Second contract
+```{r}
+disease_to_analyse <- c("Venezuelan equine encephalomyelitis", 
+                        "Equine encephalomyelitis (Eastern)(2006-)", 
+                        "Equine encephalomyelitis (Western)(2006-)",
+                        "Echinococcosis/hydatidosis",
+                        "Leishmaniosis",
+                        "Q fever")
+# Dates
+  w$date <- floor_date(w$`event_start date`, unit="month")
+
+```
+
+```{r}
+# Define a list to store each map
+map_list <- list()
+
+# Iterate over each disease in disease_to_analyse
+for (disease in disease_to_analyse) {
+  
+  # Filter data for the specific disease
+  outb <- w %>% 
+    filter(disease_eng == disease) %>% 
+    group_by(disease_eng, Species_fg, iso_code, country, reporting_level) %>% 
+    summarize(outbreak=n(), cases=sum(cases, na.rm = TRUE))
+
+  # Pop up for visualization with collapsed information just to see years and species showing the number of cases
+  outb_pop <- w %>% 
+    filter(disease_eng == disease) %>% 
+    group_by(disease_eng, iso_code, country) %>% 
+    summarize(outbreak=n(), 
+              species=paste(unique(Species_fg), collapse = ","), 
+              years=paste(unique(year(date)), collapse = ","))
+    
+  # Update the number of outbreaks and cases on the map
+  wm$outbreak <- outb$outbreak[match(wm$ISO3, outb$iso_code)]
+  wm$cases <- outb$cases[match(wm$ISO3, outb$iso_code)]
+  wm$years <- outb_pop$years[match(wm$ISO3, outb_pop$iso_code)]
+  wm$species <- outb_pop$species[match(wm$ISO3, outb_pop$iso_code)]
+
+    # Set color palette for outbreaks
+  pal <- colorNumeric(
+    palette = "Spectral",
+    domain = wm$cases, 
+    na.color = "white")
+  
+  # Create the map for the specific disease
+  map <- leaflet(wm) %>%
+    addProviderTiles(providers$Esri.WorldStreetMap) %>%
+    setView(lng = 25, lat = 10, zoom = 2) %>%
+    addPolygons(weight = 0.5, 
+                color = ~pal(cases),
+                popup = ~paste(NAME, years, species)) %>% 
+    addLegend("bottomright", pal = pal, values = ~ outbreak,
+              title = paste("Outbreaks", "<br>", "<br>", disease),
+              opacity = 1)
+  
+  # Store each map in the list with the disease name as the key
+  map_list[[disease]] <- map
+}
+
+# Now map_list contains all maps for each disease
+```
+
+
+
+```{r}
+# Show maps
+map_list[[1]]
+map_list[[2]]
+#There are Reported cases in Mexico
+map_list[[3]]
+map_list[[4]]
+map_list[[5]]
+map_list[[6]]
+
+```
+
+```{r}
+datatable(w %>% 
+    filter(disease_eng == disease_to_analyse) %>% 
+    group_by(disease_eng, Species_fg, iso_code, country, year(date)) %>% 
+    summarize(outbreak=n(), cases=sum(cases, na.rm = TRUE))
+)
+```
+
+# Credits 
+Acosta, Alfredo PhD<sup>1</sup>. 
+**SVA<sup>1</sup>**: SVA <http://www.sva.se/>. 
